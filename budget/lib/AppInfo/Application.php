@@ -240,7 +240,8 @@ class Application extends App implements IBootstrap {
 
         $context->registerService(\OCA\Budget\Service\CategoryService::class, function($c) {
             return new \OCA\Budget\Service\CategoryService(
-                $c->get(\OCA\Budget\Db\CategoryMapper::class)
+                $c->get(\OCA\Budget\Db\CategoryMapper::class),
+                $c->get(\OCA\Budget\Db\TransactionMapper::class)
             );
         });
         $context->registerServiceAlias('CategoryService', \OCA\Budget\Service\CategoryService::class);
