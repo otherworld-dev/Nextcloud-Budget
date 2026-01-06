@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace OCA\Budget\Db;
 
+use OCA\Budget\Db\Trait\EncryptedFieldsTrait;
 use OCA\Budget\Service\EncryptionService;
 use OCP\AppFramework\Db\DoesNotExistException;
 use OCP\AppFramework\Db\Entity;
@@ -15,11 +16,11 @@ use OCP\IDBConnection;
  * @template-extends QBMapper<Account>
  */
 class AccountMapper extends QBMapper {
-    private EncryptionService $encryptionService;
+    use EncryptedFieldsTrait;
 
     public function __construct(IDBConnection $db, EncryptionService $encryptionService) {
         parent::__construct($db, 'budget_accounts', Account::class);
-        $this->encryptionService = $encryptionService;
+        $this->initializeEncryption($encryptionService, Account::class);
     }
 
     /**
@@ -33,7 +34,7 @@ class AccountMapper extends QBMapper {
             ->andWhere($qb->expr()->eq('user_id', $qb->createNamedParameter($userId)));
 
         $account = $this->findEntity($qb);
-        return $this->decryptAccount($account);
+        return $this->decryptEntity($account);
     }
 
     /**
@@ -47,7 +48,7 @@ class AccountMapper extends QBMapper {
             ->orderBy('name', 'ASC');
 
         $accounts = $this->findEntities($qb);
-        return array_map(fn($account) => $this->decryptAccount($account), $accounts);
+        return $this->decryptEntities($accounts);
     }
 
     /**
@@ -58,15 +59,15 @@ class AccountMapper extends QBMapper {
         $qb->select($qb->func()->sum('balance'))
             ->from($this->getTableName())
             ->where($qb->expr()->eq('user_id', $qb->createNamedParameter($userId)));
-        
+
         if ($currency !== null) {
             $qb->andWhere($qb->expr()->eq('currency', $qb->createNamedParameter($currency)));
         }
-        
+
         $result = $qb->executeQuery();
         $sum = $result->fetchOne();
         $result->closeCursor();
-        
+
         return (float) ($sum ?? 0);
     }
 
@@ -87,11 +88,11 @@ class AccountMapper extends QBMapper {
      */
     public function insert(Entity $entity): Entity {
         if ($entity instanceof Account) {
-            $this->encryptAccountFields($entity);
+            $this->encryptEntity($entity);
         }
         $inserted = parent::insert($entity);
         if ($inserted instanceof Account) {
-            return $this->decryptAccount($inserted);
+            return $this->decryptEntity($inserted);
         }
         return $inserted;
     }
@@ -113,11 +114,11 @@ class AccountMapper extends QBMapper {
             ->set('balance', $qb->createNamedParameter($entity->getBalance()))
             ->set('currency', $qb->createNamedParameter($entity->getCurrency()))
             ->set('institution', $qb->createNamedParameter($entity->getInstitution()))
-            ->set('account_number', $qb->createNamedParameter($this->encryptionService->encrypt($entity->getAccountNumber())))
-            ->set('routing_number', $qb->createNamedParameter($this->encryptionService->encrypt($entity->getRoutingNumber())))
-            ->set('sort_code', $qb->createNamedParameter($this->encryptionService->encrypt($entity->getSortCode())))
-            ->set('iban', $qb->createNamedParameter($this->encryptionService->encrypt($entity->getIban())))
-            ->set('swift_bic', $qb->createNamedParameter($this->encryptionService->encrypt($entity->getSwiftBic())))
+            ->set('account_number', $qb->createNamedParameter($this->getEncryptedValue($entity, 'accountNumber')))
+            ->set('routing_number', $qb->createNamedParameter($this->getEncryptedValue($entity, 'routingNumber')))
+            ->set('sort_code', $qb->createNamedParameter($this->getEncryptedValue($entity, 'sortCode')))
+            ->set('iban', $qb->createNamedParameter($this->getEncryptedValue($entity, 'iban')))
+            ->set('swift_bic', $qb->createNamedParameter($this->getEncryptedValue($entity, 'swiftBic')))
             ->set('account_holder_name', $qb->createNamedParameter($entity->getAccountHolderName()))
             ->set('opening_date', $qb->createNamedParameter($entity->getOpeningDate()))
             ->set('interest_rate', $qb->createNamedParameter($entity->getInterestRate()))
@@ -130,28 +131,5 @@ class AccountMapper extends QBMapper {
 
         // Reload the entity from database to ensure we return the persisted state (decrypted)
         return $this->find($entity->getId(), $entity->getUserId());
-    }
-
-    /**
-     * Decrypt sensitive fields on an Account entity.
-     */
-    private function decryptAccount(Account $account): Account {
-        $account->setAccountNumber($this->encryptionService->decrypt($account->getAccountNumber()));
-        $account->setRoutingNumber($this->encryptionService->decrypt($account->getRoutingNumber()));
-        $account->setSortCode($this->encryptionService->decrypt($account->getSortCode()));
-        $account->setIban($this->encryptionService->decrypt($account->getIban()));
-        $account->setSwiftBic($this->encryptionService->decrypt($account->getSwiftBic()));
-        return $account;
-    }
-
-    /**
-     * Encrypt sensitive fields on an Account entity before insert.
-     */
-    private function encryptAccountFields(Account $account): void {
-        $account->setAccountNumber($this->encryptionService->encrypt($account->getAccountNumber()));
-        $account->setRoutingNumber($this->encryptionService->encrypt($account->getRoutingNumber()));
-        $account->setSortCode($this->encryptionService->encrypt($account->getSortCode()));
-        $account->setIban($this->encryptionService->encrypt($account->getIban()));
-        $account->setSwiftBic($this->encryptionService->encrypt($account->getSwiftBic()));
     }
 }

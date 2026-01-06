@@ -7,11 +7,12 @@ namespace OCA\Budget\Service;
 use OCA\Budget\Db\Account;
 use OCA\Budget\Db\AccountMapper;
 use OCA\Budget\Db\TransactionMapper;
-use OCA\Budget\Service\MoneyCalculator;
-use OCP\AppFramework\Db\DoesNotExistException;
+use OCP\AppFramework\Db\Entity;
 
-class AccountService {
-    private AccountMapper $mapper;
+/**
+ * @extends AbstractCrudService<Account>
+ */
+class AccountService extends AbstractCrudService {
     private TransactionMapper $transactionMapper;
 
     public function __construct(
@@ -20,17 +21,6 @@ class AccountService {
     ) {
         $this->mapper = $mapper;
         $this->transactionMapper = $transactionMapper;
-    }
-
-    /**
-     * @throws DoesNotExistException
-     */
-    public function find(int $id, string $userId): Account {
-        return $this->mapper->find($id, $userId);
-    }
-
-    public function findAll(string $userId): array {
-        return $this->mapper->findAll($userId);
     }
 
     public function create(
@@ -68,38 +58,20 @@ class AccountService {
         $account->setInterestRate($interestRate);
         $account->setCreditLimit($creditLimit);
         $account->setOverdraftLimit($overdraftLimit);
-        $account->setCreatedAt(date('Y-m-d H:i:s'));
-        $account->setUpdatedAt(date('Y-m-d H:i:s'));
-        
+        $this->setTimestamps($account, true);
+
         return $this->mapper->insert($account);
     }
 
-    public function update(int $id, string $userId, array $updates): Account {
-        $account = $this->find($id, $userId);
-
-        foreach ($updates as $key => $value) {
-            $setter = 'set' . ucfirst($key);
-            // Use is_callable() instead of method_exists() to support magic methods
-            // The Entity parent class uses __call() for getters/setters
-            if (is_callable([$account, $setter])) {
-                $account->$setter($value);
-            }
-        }
-
-        $account->setUpdatedAt(date('Y-m-d H:i:s'));
-        return $this->mapper->update($account);
-    }
-
-    public function delete(int $id, string $userId): void {
-        $account = $this->find($id, $userId);
-        
+    /**
+     * @inheritDoc
+     */
+    protected function beforeDelete(Entity $entity, string $userId): void {
         // Check if account has transactions
-        $transactions = $this->transactionMapper->findByAccount($id, 1);
+        $transactions = $this->transactionMapper->findByAccount($entity->getId(), 1);
         if (!empty($transactions)) {
             throw new \Exception('Cannot delete account with existing transactions');
         }
-        
-        $this->mapper->delete($account);
     }
 
     public function getSummary(string $userId): array {

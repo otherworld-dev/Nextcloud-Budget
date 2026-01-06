@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 namespace OCA\Budget\Service;
 
+use OCA\Budget\Enum\AccountType;
+use OCA\Budget\Enum\Currency;
+use OCA\Budget\Enum\Frequency;
+use OCA\Budget\Enum\TransactionType;
+
 class ValidationService {
     /**
      * Maximum length constants for string fields.
@@ -307,30 +312,46 @@ class ValidationService {
      * Validate currency code
      */
     public function validateCurrency(string $currency): array {
-        $validCurrencies = [
-            'USD', 'EUR', 'GBP', 'CAD', 'AUD', 'JPY', 'CHF', 'CNY', 'SEK', 'NOK',
-            'MXN', 'NZD', 'SGD', 'HKD', 'ZAR', 'INR', 'BRL', 'RUB', 'KRW', 'TRY'
-        ];
+        $currencyEnum = Currency::tryFromString($currency);
 
-        $currency = strtoupper(trim($currency));
-
-        if (!in_array($currency, $validCurrencies)) {
+        if ($currencyEnum === null) {
             return ['valid' => false, 'error' => 'Invalid currency code'];
         }
 
-        return ['valid' => true, 'formatted' => $currency];
+        return ['valid' => true, 'formatted' => $currencyEnum->value];
     }
 
     /**
      * Validate account type
      */
     public function validateAccountType(string $type): array {
-        $validTypes = [
-            'checking', 'savings', 'credit_card', 'investment', 'loan', 'cash', 'money_market'
-        ];
-
-        if (!in_array($type, $validTypes)) {
+        if (!AccountType::isValid($type)) {
             return ['valid' => false, 'error' => 'Invalid account type'];
+        }
+
+        return ['valid' => true, 'formatted' => $type];
+    }
+
+    /**
+     * Validate bill frequency
+     */
+    public function validateFrequency(string $frequency): array {
+        if (!Frequency::isValid($frequency)) {
+            return [
+                'valid' => false,
+                'error' => 'Invalid frequency. Must be one of: ' . implode(', ', Frequency::values())
+            ];
+        }
+
+        return ['valid' => true, 'formatted' => $frequency];
+    }
+
+    /**
+     * Validate transaction type
+     */
+    public function validateTransactionType(string $type): array {
+        if (!TransactionType::isValid($type)) {
+            return ['valid' => false, 'error' => 'Invalid transaction type'];
         }
 
         return ['valid' => true, 'formatted' => $type];

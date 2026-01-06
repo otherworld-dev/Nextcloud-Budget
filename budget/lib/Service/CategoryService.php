@@ -7,10 +7,12 @@ namespace OCA\Budget\Service;
 use OCA\Budget\Db\Category;
 use OCA\Budget\Db\CategoryMapper;
 use OCA\Budget\Db\TransactionMapper;
-use OCP\AppFramework\Db\DoesNotExistException;
+use OCP\AppFramework\Db\Entity;
 
-class CategoryService {
-    private CategoryMapper $mapper;
+/**
+ * @extends AbstractCrudService<Category>
+ */
+class CategoryService extends AbstractCrudService {
     private TransactionMapper $transactionMapper;
 
     public function __construct(
@@ -22,18 +24,15 @@ class CategoryService {
     }
 
     /**
-     * @throws DoesNotExistException
+     * @return CategoryMapper
      */
-    public function find(int $id, string $userId): Category {
-        return $this->mapper->find($id, $userId);
-    }
-
-    public function findAll(string $userId): array {
-        return $this->mapper->findAll($userId);
+    protected function getCategoryMapper(): CategoryMapper {
+        /** @var CategoryMapper */
+        return $this->mapper;
     }
 
     public function findByType(string $userId, string $type): array {
-        return $this->mapper->findByType($userId, $type);
+        return $this->getCategoryMapper()->findByType($userId, $type);
     }
 
     public function create(
@@ -50,7 +49,7 @@ class CategoryService {
         if ($parentId !== null) {
             $this->find($parentId, $userId);
         }
-        
+
         $category = new Category();
         $category->setUserId($userId);
         $category->setName($name);
@@ -60,48 +59,39 @@ class CategoryService {
         $category->setColor($color ?: $this->generateRandomColor());
         $category->setBudgetAmount($budgetAmount);
         $category->setSortOrder($sortOrder);
-        $category->setCreatedAt(date('Y-m-d H:i:s'));
-        
+        $this->setTimestamps($category, true);
+
         return $this->mapper->insert($category);
     }
 
-    public function update(int $id, string $userId, array $updates): Category {
-        $category = $this->find($id, $userId);
-        
+    /**
+     * @inheritDoc
+     */
+    protected function beforeUpdate(Entity $entity, array $updates, string $userId): void {
         // Validate parent if being updated
         if (isset($updates['parentId']) && $updates['parentId'] !== null) {
-            if ($updates['parentId'] === $id) {
+            if ($updates['parentId'] === $entity->getId()) {
                 throw new \Exception('Category cannot be its own parent');
             }
             $this->find($updates['parentId'], $userId);
         }
-        
-        foreach ($updates as $key => $value) {
-            $setter = 'set' . ucfirst($key);
-            if (method_exists($category, $setter)) {
-                $category->$setter($value);
-            }
-        }
-        
-        return $this->mapper->update($category);
     }
 
-    public function delete(int $id, string $userId): void {
-        $category = $this->find($id, $userId);
-        
+    /**
+     * @inheritDoc
+     */
+    protected function beforeDelete(Entity $entity, string $userId): void {
         // Check for child categories
-        $children = $this->mapper->findChildren($userId, $id);
+        $children = $this->getCategoryMapper()->findChildren($userId, $entity->getId());
         if (!empty($children)) {
             throw new \Exception('Cannot delete category with subcategories');
         }
-        
+
         // Check for transactions
-        $transactions = $this->transactionMapper->findByCategory($id, 1);
+        $transactions = $this->transactionMapper->findByCategory($entity->getId(), 1);
         if (!empty($transactions)) {
             throw new \Exception('Cannot delete category with existing transactions');
         }
-        
-        $this->mapper->delete($category);
     }
 
     public function getCategoryTree(string $userId): array {
@@ -111,7 +101,7 @@ class CategoryService {
 
     private function buildTree(array $categories, ?int $parentId = null): array {
         $tree = [];
-        
+
         foreach ($categories as $category) {
             if ($category->getParentId() === $parentId) {
                 $categoryArray = $category->jsonSerialize();
@@ -119,33 +109,33 @@ class CategoryService {
                 $tree[] = $categoryArray;
             }
         }
-        
+
         return $tree;
     }
 
     public function getCategorySpending(int $categoryId, string $userId, string $startDate, string $endDate): float {
         $this->find($categoryId, $userId); // Verify ownership
-        return $this->mapper->getCategorySpending($categoryId, $startDate, $endDate);
+        return $this->getCategoryMapper()->getCategorySpending($categoryId, $startDate, $endDate);
     }
 
     public function getBudgetAnalysis(string $userId, string $month = null): array {
         if (!$month) {
             $month = date('Y-m');
         }
-        
+
         $startDate = $month . '-01';
         $endDate = date('Y-m-t', strtotime($startDate));
-        
+
         $categories = $this->findAll($userId);
         $analysis = [];
-        
+
         foreach ($categories as $category) {
             if ($category->getBudgetAmount() > 0) {
                 $spent = $this->getCategorySpending($category->getId(), $userId, $startDate, $endDate);
                 $budget = $category->getBudgetAmount();
                 $remaining = $budget - $spent;
                 $percentage = $budget > 0 ? ($spent / $budget) * 100 : 0;
-                
+
                 $analysis[] = [
                     'category' => $category,
                     'budget' => $budget,
@@ -156,7 +146,7 @@ class CategoryService {
                 ];
             }
         }
-        
+
         return $analysis;
     }
 
@@ -369,7 +359,7 @@ class CategoryService {
                 $transactions = $this->transactionMapper->findByCategory($category->getId(), 1);
                 if (empty($transactions)) {
                     // Check for children
-                    $children = $this->mapper->findChildren($userId, $category->getId());
+                    $children = $this->getCategoryMapper()->findChildren($userId, $category->getId());
                     if (empty($children)) {
                         // Safe to delete
                         $this->mapper->delete($category);
@@ -414,7 +404,7 @@ class CategoryService {
 
         // Then delete parents
         foreach ($parents as $category) {
-            $remainingChildren = $this->mapper->findChildren($userId, $category->getId());
+            $remainingChildren = $this->getCategoryMapper()->findChildren($userId, $category->getId());
             $transactions = $this->transactionMapper->findByCategory($category->getId(), 1);
             if (empty($remainingChildren) && empty($transactions)) {
                 $this->mapper->delete($category);
@@ -449,7 +439,7 @@ class CategoryService {
             '#06b6d4', '#0ea5e9', '#3b82f6', '#6366f1',
             '#8b5cf6', '#a855f7', '#d946ef', '#ec4899'
         ];
-        
+
         return $colors[array_rand($colors)];
     }
 }

@@ -24,8 +24,6 @@ class BillController extends Controller {
     private ValidationService $validationService;
     private string $userId;
 
-    private const VALID_FREQUENCIES = ['daily', 'weekly', 'biweekly', 'monthly', 'quarterly', 'yearly'];
-
     public function __construct(
         IRequest $request,
         BillService $service,
@@ -96,9 +94,11 @@ class BillController extends Controller {
             $name = $nameValidation['sanitized'];
 
             // Validate frequency
-            if (!in_array($frequency, self::VALID_FREQUENCIES, true)) {
-                return new DataResponse(['error' => 'Invalid frequency. Must be one of: ' . implode(', ', self::VALID_FREQUENCIES)], Http::STATUS_BAD_REQUEST);
+            $frequencyValidation = $this->validationService->validateFrequency($frequency);
+            if (!$frequencyValidation['valid']) {
+                return new DataResponse(['error' => $frequencyValidation['error']], Http::STATUS_BAD_REQUEST);
             }
+            $frequency = $frequencyValidation['formatted'];
 
             // Validate dueDay range
             if ($dueDay !== null && ($dueDay < 1 || $dueDay > 31)) {
@@ -171,10 +171,11 @@ class BillController extends Controller {
 
             // Validate frequency if provided
             if (isset($data['frequency'])) {
-                if (!in_array($data['frequency'], self::VALID_FREQUENCIES, true)) {
-                    return new DataResponse(['error' => 'Invalid frequency. Must be one of: ' . implode(', ', self::VALID_FREQUENCIES)], Http::STATUS_BAD_REQUEST);
+                $frequencyValidation = $this->validationService->validateFrequency($data['frequency']);
+                if (!$frequencyValidation['valid']) {
+                    return new DataResponse(['error' => $frequencyValidation['error']], Http::STATUS_BAD_REQUEST);
                 }
-                $updates['frequency'] = $data['frequency'];
+                $updates['frequency'] = $frequencyValidation['formatted'];
             }
 
             // Validate dueDay if provided

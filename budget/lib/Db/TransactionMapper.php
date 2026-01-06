@@ -13,8 +13,11 @@ use OCP\IDBConnection;
  * @template-extends QBMapper<Transaction>
  */
 class TransactionMapper extends QBMapper {
-    public function __construct(IDBConnection $db) {
+    private QueryFilterBuilder $filterBuilder;
+
+    public function __construct(IDBConnection $db, ?QueryFilterBuilder $filterBuilder = null) {
         parent::__construct($db, 'budget_transactions', Transaction::class);
+        $this->filterBuilder = $filterBuilder ?? new QueryFilterBuilder();
     }
 
     /**
@@ -157,131 +160,33 @@ class TransactionMapper extends QBMapper {
      * Find transactions with filters, pagination and sorting
      */
     public function findWithFilters(string $userId, array $filters, int $limit, int $offset): array {
+        // Main query
         $qb = $this->db->getQueryBuilder();
-
-        // Base query
         $qb->select('t.*')
             ->from($this->getTableName(), 't')
             ->innerJoin('t', 'budget_accounts', 'a', $qb->expr()->eq('t.account_id', 'a.id'))
             ->where($qb->expr()->eq('a.user_id', $qb->createNamedParameter($userId)));
 
-        // Apply filters
-        if (!empty($filters['accountId'])) {
-            $qb->andWhere($qb->expr()->eq('t.account_id', $qb->createNamedParameter($filters['accountId'], IQueryBuilder::PARAM_INT)));
-        }
+        // Apply filters using the filter builder
+        $this->filterBuilder->applyTransactionFilters($qb, $filters, 't');
 
-        if (!empty($filters['category'])) {
-            if ($filters['category'] === 'uncategorized') {
-                $qb->andWhere($qb->expr()->isNull('t.category_id'));
-            } else {
-                $qb->andWhere($qb->expr()->eq('t.category_id', $qb->createNamedParameter($filters['category'], IQueryBuilder::PARAM_INT)));
-            }
-        }
-
-        if (!empty($filters['type'])) {
-            $qb->andWhere($qb->expr()->eq('t.type', $qb->createNamedParameter($filters['type'])));
-        }
-
-        if (!empty($filters['dateFrom'])) {
-            $qb->andWhere($qb->expr()->gte('t.date', $qb->createNamedParameter($filters['dateFrom'])));
-        }
-
-        if (!empty($filters['dateTo'])) {
-            $qb->andWhere($qb->expr()->lte('t.date', $qb->createNamedParameter($filters['dateTo'])));
-        }
-
-        if (!empty($filters['amountMin'])) {
-            $qb->andWhere($qb->expr()->gte('t.amount', $qb->createNamedParameter($filters['amountMin'])));
-        }
-
-        if (!empty($filters['amountMax'])) {
-            $qb->andWhere($qb->expr()->lte('t.amount', $qb->createNamedParameter($filters['amountMax'])));
-        }
-
-        if (!empty($filters['search'])) {
-            $searchPattern = '%' . $qb->escapeLikeParameter($filters['search']) . '%';
-            $qb->andWhere(
-                $qb->expr()->orX(
-                    $qb->expr()->like('t.description', $qb->createNamedParameter($searchPattern)),
-                    $qb->expr()->like('t.vendor', $qb->createNamedParameter($searchPattern)),
-                    $qb->expr()->like('t.reference', $qb->createNamedParameter($searchPattern)),
-                    $qb->expr()->like('t.notes', $qb->createNamedParameter($searchPattern))
-                )
-            );
-        }
-
-        // Count total records for pagination - create a fresh query builder
+        // Count query - reuse filter builder for consistency
         $countQb = $this->db->getQueryBuilder();
         $countQb->select($countQb->func()->count('t.id'))
             ->from($this->getTableName(), 't')
             ->innerJoin('t', 'budget_accounts', 'a', $countQb->expr()->eq('t.account_id', 'a.id'))
             ->where($countQb->expr()->eq('a.user_id', $countQb->createNamedParameter($userId)));
 
-        // Apply the same filters to count query
-        if (!empty($filters['accountId'])) {
-            $countQb->andWhere($countQb->expr()->eq('t.account_id', $countQb->createNamedParameter($filters['accountId'], IQueryBuilder::PARAM_INT)));
-        }
-        if (!empty($filters['category'])) {
-            if ($filters['category'] === 'uncategorized') {
-                $countQb->andWhere($countQb->expr()->isNull('t.category_id'));
-            } else {
-                $countQb->andWhere($countQb->expr()->eq('t.category_id', $countQb->createNamedParameter($filters['category'], IQueryBuilder::PARAM_INT)));
-            }
-        }
-        if (!empty($filters['type'])) {
-            $countQb->andWhere($countQb->expr()->eq('t.type', $countQb->createNamedParameter($filters['type'])));
-        }
-        if (!empty($filters['dateFrom'])) {
-            $countQb->andWhere($countQb->expr()->gte('t.date', $countQb->createNamedParameter($filters['dateFrom'])));
-        }
-        if (!empty($filters['dateTo'])) {
-            $countQb->andWhere($countQb->expr()->lte('t.date', $countQb->createNamedParameter($filters['dateTo'])));
-        }
-        if (!empty($filters['amountMin'])) {
-            $countQb->andWhere($countQb->expr()->gte('t.amount', $countQb->createNamedParameter($filters['amountMin'])));
-        }
-        if (!empty($filters['amountMax'])) {
-            $countQb->andWhere($countQb->expr()->lte('t.amount', $countQb->createNamedParameter($filters['amountMax'])));
-        }
-        if (!empty($filters['search'])) {
-            $searchPattern = '%' . $countQb->escapeLikeParameter($filters['search']) . '%';
-            $countQb->andWhere(
-                $countQb->expr()->orX(
-                    $countQb->expr()->like('t.description', $countQb->createNamedParameter($searchPattern)),
-                    $countQb->expr()->like('t.vendor', $countQb->createNamedParameter($searchPattern)),
-                    $countQb->expr()->like('t.reference', $countQb->createNamedParameter($searchPattern)),
-                    $countQb->expr()->like('t.notes', $countQb->createNamedParameter($searchPattern))
-                )
-            );
-        }
+        // Apply same filters to count query
+        $this->filterBuilder->applyTransactionFilters($countQb, $filters, 't');
 
         $countResult = $countQb->executeQuery();
         $total = (int)$countResult->fetchOne();
         $countResult->closeCursor();
 
-        // Apply sorting
-        $sortField = $filters['sort'] ?? 'date';
-        $sortDirection = strtoupper($filters['direction'] ?? 'DESC');
-
-        // Map frontend sort fields to database fields
-        $sortFieldMap = [
-            'date' => 't.date',
-            'description' => 't.description',
-            'amount' => 't.amount',
-            'type' => 't.type',
-            'category' => 't.category_id',
-            'account' => 't.account_id'
-        ];
-
-        $dbSortField = $sortFieldMap[$sortField] ?? 't.date';
-        $qb->orderBy($dbSortField, $sortDirection);
-
-        // Add secondary sort by ID for consistency
-        $qb->addOrderBy('t.id', 'DESC');
-
-        // Apply pagination
-        $qb->setMaxResults($limit);
-        $qb->setFirstResult($offset);
+        // Apply sorting and pagination
+        $this->filterBuilder->applySorting($qb, $filters['sort'] ?? null, $filters['direction'] ?? null, 't');
+        $this->filterBuilder->applyPagination($qb, $limit, $offset);
 
         // Also select account name and currency
         $qb->addSelect('a.name as account_name', 'a.currency as account_currency');

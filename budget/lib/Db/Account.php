@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace OCA\Budget\Db;
 
 use JsonSerializable;
+use OCA\Budget\Attribute\Encrypted;
 use OCP\AppFramework\Db\Entity;
 
 /**
@@ -54,11 +55,22 @@ class Account extends Entity implements JsonSerializable {
     protected $balance;
     protected $currency;
     protected $institution;
+
+    #[Encrypted]
     protected $accountNumber;
+
+    #[Encrypted]
     protected $routingNumber;
+
+    #[Encrypted]
     protected $sortCode;
+
+    #[Encrypted]
     protected $iban;
+
+    #[Encrypted]
     protected $swiftBic;
+
     protected $accountHolderName;
     protected $openingDate;
     protected $interestRate;
