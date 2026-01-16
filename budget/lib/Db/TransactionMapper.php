@@ -719,4 +719,99 @@ class TransactionMapper extends QBMapper {
 
         return (int)$linkedId;
     }
+
+    /**
+     * Find all unlinked transactions for a user with their potential matches
+     * Returns transactions grouped with match counts for bulk matching
+     *
+     * @param string $userId
+     * @param int $dateWindowDays
+     * @param int $limit Batch size limit
+     * @param int $offset Batch offset
+     * @return array Array with 'transactions' (unlinked transactions with matches) and 'total' count
+     */
+    public function findUnlinkedWithMatches(
+        string $userId,
+        int $dateWindowDays = 3,
+        int $limit = 100,
+        int $offset = 0
+    ): array {
+        // First, get count of all unlinked transactions
+        $countQb = $this->db->getQueryBuilder();
+        $countQb->select($countQb->createFunction('COUNT(DISTINCT t.id)'))
+            ->from($this->getTableName(), 't')
+            ->innerJoin('t', 'budget_accounts', 'a', $countQb->expr()->eq('t.account_id', 'a.id'))
+            ->where($countQb->expr()->eq('a.user_id', $countQb->createNamedParameter($userId)))
+            ->andWhere($countQb->expr()->isNull('t.linked_transaction_id'));
+
+        $countResult = $countQb->executeQuery();
+        $total = (int)$countResult->fetchOne();
+        $countResult->closeCursor();
+
+        if ($total === 0) {
+            return ['transactions' => [], 'total' => 0];
+        }
+
+        // Get batch of unlinked transactions
+        $qb = $this->db->getQueryBuilder();
+        $qb->select('t.*', 'a.name as account_name', 'a.currency as account_currency')
+            ->from($this->getTableName(), 't')
+            ->innerJoin('t', 'budget_accounts', 'a', $qb->expr()->eq('t.account_id', 'a.id'))
+            ->where($qb->expr()->eq('a.user_id', $qb->createNamedParameter($userId)))
+            ->andWhere($qb->expr()->isNull('t.linked_transaction_id'))
+            ->orderBy('t.date', 'DESC')
+            ->setFirstResult($offset)
+            ->setMaxResults($limit);
+
+        $result = $qb->executeQuery();
+        $unlinkedTransactions = $result->fetchAll();
+        $result->closeCursor();
+
+        // For each unlinked transaction, find potential matches
+        $transactionsWithMatches = [];
+        foreach ($unlinkedTransactions as $tx) {
+            $matches = $this->findPotentialMatches(
+                $userId,
+                (int)$tx['id'],
+                (int)$tx['account_id'],
+                (float)$tx['amount'],
+                $tx['type'],
+                $tx['date'],
+                $dateWindowDays
+            );
+
+            if (count($matches) > 0) {
+                // Convert Transaction entities to arrays and add account info
+                $matchArrays = [];
+                foreach ($matches as $match) {
+                    $matchArray = $match->jsonSerialize();
+                    // Get account info for the match
+                    $matchAccountQb = $this->db->getQueryBuilder();
+                    $matchAccountQb->select('name', 'currency')
+                        ->from('budget_accounts')
+                        ->where($matchAccountQb->expr()->eq('id', $matchAccountQb->createNamedParameter($match->getAccountId(), IQueryBuilder::PARAM_INT)));
+                    $matchAccountResult = $matchAccountQb->executeQuery();
+                    $matchAccount = $matchAccountResult->fetch();
+                    $matchAccountResult->closeCursor();
+
+                    if ($matchAccount) {
+                        $matchArray['accountName'] = $matchAccount['name'];
+                        $matchArray['accountCurrency'] = $matchAccount['currency'];
+                    }
+                    $matchArrays[] = $matchArray;
+                }
+
+                $transactionsWithMatches[] = [
+                    'transaction' => $tx,
+                    'matches' => $matchArrays,
+                    'matchCount' => count($matches)
+                ];
+            }
+        }
+
+        return [
+            'transactions' => $transactionsWithMatches,
+            'total' => $total
+        ];
+    }
 }

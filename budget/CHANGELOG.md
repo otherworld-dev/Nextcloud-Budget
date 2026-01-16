@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Automatic detection of potential transfer matches (same amount, opposite type, within 3 days)
 - Link/unlink transactions as transfer pairs
 - Visual indicator for linked transactions in transaction list
+- Bulk "Match All" feature for batch transaction matching
+  - Auto-links transactions with exactly one match
+  - Manual review modal for transactions with multiple potential matches
+  - Undo option for auto-matched pairs
 
 ## [1.0.5] - 2026-01-14
 

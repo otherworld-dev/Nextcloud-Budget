@@ -346,7 +346,8 @@ class TransactionController extends Controller {
             $result = $this->service->linkTransactions($id, $targetId, $this->userId);
             return new DataResponse($result);
         } catch (\Exception $e) {
-            return $this->handleError($e, 'Failed to link transactions', Http::STATUS_BAD_REQUEST);
+            // Use validation error handler to show actual message (e.g., "already linked")
+            return $this->handleValidationError($e);
         }
     }
 
@@ -362,6 +363,22 @@ class TransactionController extends Controller {
             return new DataResponse($result);
         } catch (\Exception $e) {
             return $this->handleError($e, 'Failed to unlink transaction', Http::STATUS_BAD_REQUEST);
+        }
+    }
+
+    /**
+     * Bulk find and match transactions
+     * Auto-links single matches, returns multiple matches for manual review
+     *
+     * @NoAdminRequired
+     */
+    #[UserRateLimit(limit: 5, period: 60)]
+    public function bulkMatch(int $dateWindow = 3): DataResponse {
+        try {
+            $result = $this->service->bulkFindAndMatch($this->userId, $dateWindow);
+            return new DataResponse($result);
+        } catch (\Exception $e) {
+            return $this->handleError($e, 'Failed to bulk match transactions');
         }
     }
 }

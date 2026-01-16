@@ -627,6 +627,10 @@ style('budget', 'style');
                         <span class="icon-history" aria-hidden="true"></span>
                         Reconcile
                     </button>
+                    <button id="bulk-match-btn" class="secondary" title="Auto-match transfer transactions">
+                        <span class="icon-link" aria-hidden="true"></span>
+                        Match All
+                    </button>
                     <button id="add-transaction-btn" class="primary" aria-label="Add new transaction">
                         <span class="icon-add" aria-hidden="true"></span>
                         Add Transaction
@@ -2678,6 +2682,58 @@ style('budget', 'style');
             </div>
             <div id="matching-list" class="matching-list"></div>
         </div>
+        <div class="modal-buttons">
+            <button type="button" class="secondary cancel-btn" aria-label="Close dialog">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- Bulk Match Results Modal -->
+<div id="bulk-match-modal" class="modal" style="display: none;" role="dialog" aria-labelledby="bulk-match-modal-title" aria-hidden="true">
+    <div class="modal-content modal-wide">
+        <h3 id="bulk-match-modal-title">Bulk Match Results</h3>
+
+        <!-- Loading State -->
+        <div id="bulk-match-loading" class="bulk-match-loading" style="display: none;">
+            <div class="loading-spinner"></div>
+            <p>Searching and matching transactions...</p>
+        </div>
+
+        <!-- Results Content -->
+        <div id="bulk-match-results" style="display: none;">
+            <!-- Summary Stats -->
+            <div id="bulk-match-summary" class="bulk-match-summary">
+                <div class="summary-item success">
+                    <span class="summary-count" id="auto-matched-count">0</span>
+                    <span class="summary-label">Pairs Auto-Matched</span>
+                </div>
+                <div class="summary-item warning">
+                    <span class="summary-count" id="needs-review-count">0</span>
+                    <span class="summary-label">Need Manual Review</span>
+                </div>
+            </div>
+
+            <!-- Auto-Matched Section -->
+            <div id="auto-matched-section" class="bulk-match-section" style="display: none;">
+                <h4>Auto-Matched Pairs</h4>
+                <p class="section-hint">These transactions were automatically linked. Click undo to unlink a pair.</p>
+                <div id="auto-matched-list" class="bulk-match-list"></div>
+            </div>
+
+            <!-- Needs Review Section -->
+            <div id="needs-review-section" class="bulk-match-section" style="display: none;">
+                <h4>Needs Manual Review</h4>
+                <p class="section-hint">These transactions have multiple potential matches. Select the correct match for each.</p>
+                <div id="needs-review-list" class="bulk-match-list"></div>
+            </div>
+
+            <!-- No Results State -->
+            <div id="bulk-match-empty" class="bulk-match-empty" style="display: none;">
+                <p>No transactions found that can be matched.</p>
+                <p class="hint">Matches require: same amount, opposite type (income/expense), different accounts, within 3 days.</p>
+            </div>
+        </div>
+
         <div class="modal-buttons">
             <button type="button" class="secondary cancel-btn" aria-label="Close dialog">Close</button>
         </div>

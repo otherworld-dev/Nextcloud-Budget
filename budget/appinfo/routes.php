@@ -38,6 +38,7 @@ return [
         ['name' => 'transaction#getMatches', 'url' => '/api/transactions/{id}/matches', 'verb' => 'GET'],
         ['name' => 'transaction#link', 'url' => '/api/transactions/{id}/link/{targetId}', 'verb' => 'POST'],
         ['name' => 'transaction#unlink', 'url' => '/api/transactions/{id}/link', 'verb' => 'DELETE'],
+        ['name' => 'transaction#bulkMatch', 'url' => '/api/transactions/bulk-match', 'verb' => 'POST'],
         
         // Category routes - specific paths before {id} wildcard
         ['name' => 'category#index', 'url' => '/api/categories', 'verb' => 'GET'],

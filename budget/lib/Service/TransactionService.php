@@ -246,4 +246,101 @@ class TransactionService {
 
         $this->accountMapper->updateBalance($account->getId(), $newBalance, $userId);
     }
+
+    /**
+     * Bulk find and match transactions
+     * Auto-links transactions with exactly one match, returns others for manual review
+     *
+     * @param string $userId
+     * @param int $dateWindowDays
+     * @param int $batchSize
+     * @return array Results with autoMatched, needsReview, and stats
+     */
+    public function bulkFindAndMatch(string $userId, int $dateWindowDays = 3, int $batchSize = 100): array {
+        $autoMatched = [];
+        $needsReview = [];
+        $processedIds = []; // Track IDs we've already processed to avoid duplicates
+
+        $offset = 0;
+        $hasMore = true;
+
+        while ($hasMore) {
+            $result = $this->mapper->findUnlinkedWithMatches($userId, $dateWindowDays, $batchSize, $offset);
+
+            if (empty($result['transactions'])) {
+                $hasMore = false;
+                break;
+            }
+
+            foreach ($result['transactions'] as $item) {
+                $txId = (int)$item['transaction']['id'];
+
+                // Skip if we've already processed this transaction (could be a match for another)
+                if (isset($processedIds[$txId])) {
+                    continue;
+                }
+
+                // Filter out matches that have already been processed
+                $availableMatches = array_filter($item['matches'], function($match) use ($processedIds) {
+                    return !isset($processedIds[$match['id']]);
+                });
+
+                if (empty($availableMatches)) {
+                    continue;
+                }
+
+                $availableMatches = array_values($availableMatches); // Re-index
+
+                if (count($availableMatches) === 1) {
+                    // Auto-match: exactly one available match
+                    $matchId = $availableMatches[0]['id'];
+                    try {
+                        $this->mapper->linkTransactions($txId, $matchId);
+
+                        // Mark both as processed
+                        $processedIds[$txId] = true;
+                        $processedIds[$matchId] = true;
+
+                        $autoMatched[] = [
+                            'transaction' => $item['transaction'],
+                            'linkedTo' => $availableMatches[0]
+                        ];
+                    } catch (\Exception $e) {
+                        // If linking fails, skip this pair
+                        continue;
+                    }
+                } else {
+                    // Multiple matches - needs manual review
+                    $needsReview[] = [
+                        'transaction' => $item['transaction'],
+                        'matches' => $availableMatches,
+                        'matchCount' => count($availableMatches)
+                    ];
+                    // Mark source AND all its matches as processed/reserved
+                    // This prevents matches from being auto-linked to other transactions
+                    $processedIds[$txId] = true;
+                    foreach ($availableMatches as $match) {
+                        $processedIds[$match['id']] = true;
+                    }
+                }
+            }
+
+            // Move to next batch
+            $offset += $batchSize;
+
+            // Stop if we've processed all transactions
+            if ($offset >= $result['total']) {
+                $hasMore = false;
+            }
+        }
+
+        return [
+            'autoMatched' => $autoMatched,
+            'needsReview' => $needsReview,
+            'stats' => [
+                'autoMatchedCount' => count($autoMatched),
+                'needsReviewCount' => count($needsReview)
+            ]
+        ];
+    }
 }
